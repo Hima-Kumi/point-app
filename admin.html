@@ -2,10 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8"/>
-<script src="https://hima-kumi.github.io/point-app/env.js?v=1"></script>
+<!-- ★ GitHub Pages で必ずロードさせるため絶対パス化 -->
+<script src="https://hima-kumi.github.io/point-app/env.js?v=1001"></script>
+
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>スタンプ管理（クラシック）</title>
-<!-- 最優先で API_URL を定義 -->
+
 <style>
   :root{
     --bg:#f5f7fb; --card:#ffffff; --bd:#e5e7eb; --ink:#1f2937; --sub:#6b7280;
@@ -29,12 +31,12 @@
   .k{color:var(--sub);font-size:12px}
   .big{font-size:26px;font-weight:900}
   .line{height:1px;background:var(--bd);margin:10px 0}
-  /* スキャナ */
   .scan{position:relative;border-radius:10px;overflow:hidden;background:#000}
   video{width:100%;height:auto;display:block}
   canvas{display:none}
 </style>
 </head>
+
 <body>
 <div class="wrap">
   <h1>スタンプ管理</h1>
@@ -87,7 +89,7 @@
     </section>
   </div>
 
-  <!-- スキャナ（任意） -->
+  <!-- QR -->
   <section class="card">
     <div class="muted">会員QRを読み取る（ログイン後）</div>
     <div class="scan" style="aspect-ratio:4/3;margin-top:8px;max-width:640px">
@@ -100,128 +102,219 @@
     </div>
     <canvas id="canvas"></canvas>
   </section>
+
 </div>
 
-<!-- QRライブラリ -->
 <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+
 <script>
-/* ======= 基本：API呼び出し ======= */
-if(!window.API_URL){ alert('env.js の API_URL が未設定です（/exec を指定）'); }
+/* ============================================================
+   1. API_URL の取得（env.js → window.API_URL に依存）
+   ============================================================ */
+if (!window.API_URL) {
+  alert("env.js が読み込めていません。API_URL が未設定です。");
+}
+const API_URL = window.API_URL;
+console.log("API_URL:", API_URL);
+
+const $ = s => document.querySelector(s);
+let STAFF = "";
+
+/* ============================================================
+   2. 共通 API 呼び出し
+   ============================================================ */
 async function api(name, data){
   const res = await fetch(API_URL, {
-    method: 'POST',
-    mode: 'cors',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: name, data: data }),
+    method: "POST",
+    mode: "cors",
+    headers: { "Content-Type":"text/plain;charset=utf-8" },
+    body: JSON.stringify({ action:name, data:data }),
   });
-  if(!res.ok) throw new Error('network_error');
+  if (!res.ok) throw new Error("network_error");
   return await res.json();
 }
-const $ = s => document.querySelector(s);
 
-let STAFF = ''; // ログイン済み staff_id
-
-/* ======= ログイン（UI内表示で結果を通知） ======= */
+/* ============================================================
+   3. ログイン
+   ============================================================ */
 $('#btnLogin').onclick = async ()=>{
   const sid = $('#staffId').value.trim();
   const pin = $('#pin').value.trim();
-  if(!sid || !pin){ $('#loginMsg').textContent = 'ID / PIN を入力'; return; }
-  $('#loginMsg').textContent = '照合中…';
-  try{
-    const r = await api('staff_login', { staff_id:sid, pin });
-    if(r && r.ok){ STAFF = r.staff_id; $('#loginMsg').textContent = `ログインしました（${STAFF}）`; loadPresets(); }
-    else { $('#loginMsg').textContent = 'ログイン失敗'; }
-  }catch(e){ $('#loginMsg').textContent = '通信エラー'; }
-};
+  if(!sid || !pin){
+    $('#loginMsg').textContent = "ID / PIN を入力";
+    return;
+  }
+  $('#loginMsg').textContent = "照合中…";
 
-/* ======= ▲▲▲ここから追加▲▲▲ ======= */
-$('#btnTest').onclick = async () => {
-  $('#loginMsg').textContent = 'シート設定を確認中...';
-  try {
-    const r = await api('test_staff_sheet');
-    // 成功した場合も、失敗した場合も、サーバーからの返答をすべて表示する
-    alert('サーバーからの応答:\n' + JSON.stringify(r, null, 2));
-    if (r && r.ok) {
-      $('#loginMsg').textContent = 'シートは正常に認識されています。';
+  try{
+    const r = await api("staff_login", { staff_id:sid, pin });
+    console.log("staff_login:", r);
+
+    if(r && r.ok){
+      STAFF = r.staff_id || sid;
+      $('#loginMsg').textContent = `ログインしました（${STAFF}）`;
+      loadPresets();
     } else {
-      $('#loginMsg').textContent = 'シート確認でエラーが検出されました。';
+      $('#loginMsg').textContent = r.error || "ログイン失敗";
     }
-  } catch (e) {
-    // 通信自体に失敗した場合のエラーを詳細に表示
-    $('#loginMsg').textContent = '通信エラーが発生しました。';
-    alert('通信エラーの詳細:\n' + e.toString() + '\n\n' + JSON.stringify(e));
+
+  }catch(e){
+    console.error(e);
+    $('#loginMsg').textContent = "通信エラー";
   }
 };
-/* ======= ▲▲▲ここまで追加▲▲▲ ======= */
 
-/* ======= 検索 → 選択 ======= */
-$('#btnSearch').onclick = async ()=>{
-  const q = $('#q').value.trim();
-  const host = $('#list'); host.innerHTML = '検索中…';
+/* ============================================================
+   4. シート確認
+   ============================================================ */
+$('#btnTest').onclick = async ()=>{
+  $('#loginMsg').textContent = "シート設定を確認中...";
   try{
-    const list = await api('search_members', { q });
-    host.innerHTML = '';
-    if(!list || !list.length){ host.innerHTML = '<div class="muted">該当なし</div>'; return; }
-    list.forEach(m=>{
-      const div = document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:8px;background:#fff;margin:6px 0;';
-      div.innerHTML = `<div><b>${m.name||'(無名)'}</b><div class="muted">ID:${m.member_id}／${m.phone||''}</div></div><button class="btn ghost">選択</button>`;
-      div.querySelector('button').onclick = ()=> setMember(m.member_id);
-      host.appendChild(div);
-    });
-  }catch(e){ host.innerHTML='<div class="muted">通信エラー</div>'; }
+    const r = await api("test_staff_sheet", {});
+    alert("サーバー応答:\n" + JSON.stringify(r,null,2));
+    if(r.ok){ $('#loginMsg').textContent = "シートは正常です"; }
+    else { $('#loginMsg').textContent = "設定エラー"; }
+  }catch(e){
+    alert("通信エラー:\n" + e.toString());
+    $('#loginMsg').textContent = "通信エラー";
+  }
 };
 
+/* ============================================================
+   5. 会員検索
+   ============================================================ */
+$('#btnSearch').onclick = async ()=>{
+  const q = $('#q').value.trim();
+  const host = $('#list');
+  host.innerHTML = "検索中…";
+
+  try{
+    const r = await api("search_members", { q });
+    const list = Array.isArray(r) ? r : (r.members || []);
+    console.log("search_members:", list);
+
+    host.innerHTML = "";
+    if(!list.length){
+      host.innerHTML = '<div class="muted">該当なし</div>';
+      return;
+    }
+
+    list.forEach(m=>{
+      const div=document.createElement("div");
+      div.style.cssText='display:flex;justify-content:space-between;align-items:center;border:1px solid var(--bd);padding:8px;border-radius:10px;margin:6px 0;background:#fff;';
+      div.innerHTML =
+        `<div><b>${m.name||'(無名)'}</b><div class="muted">ID:${m.member_id}／${m.phone||''}</div></div>
+         <button class="btn ghost">選択</button>`;
+      div.querySelector("button").onclick = ()=> setMember(m.member_id);
+      host.appendChild(div);
+    });
+
+  }catch(e){
+    console.error(e);
+    host.innerHTML = '<div class="muted">通信エラー</div>';
+  }
+};
+
+/* ============================================================
+   6. 会員情報取得
+   ============================================================ */
 async function setMember(id){
-  const m = await api('get_member', { member_id:id });
-  if(!m){ alert('会員が見つかりません'); return; }
-  $('#m_id').textContent = m.member_id;
-  $('#m_name').textContent = m.name || '—';
-  $('#m_phone').textContent = m.phone || '—';
-  $('#m_st').textContent = m.stamps_total;
-  $('#opMsg').textContent = '';
+  try{
+    const r = await api("get_member", { member_id:id });
+    const m = r.member || r;
+    console.log("get_member:", m);
+
+    $('#m_id').textContent = m.member_id || '—';
+    $('#m_name').textContent = m.name || '—';
+    $('#m_phone').textContent = m.phone || '—';
+    $('#m_st').textContent = m.stamps_total || 0;
+    $('#opMsg').textContent = '';
+
+  }catch(e){
+    console.error(e);
+    alert("通信エラー: 会員情報取得に失敗");
+  }
 }
 
-/* ======= クイック付与 ======= */
-document.querySelectorAll('[data-d]').forEach(b=>{
+/* ============================================================
+   7. スタンプ付与
+   ============================================================ */
+document.querySelectorAll("[data-d]").forEach(b=>{
   b.onclick = async ()=>{
-    if(!STAFF){ alert('先にログインしてください'); return; }
+    if(!STAFF){ alert("先にログインしてください"); return; }
+
     const id = $('#m_id').textContent.trim();
-    if(!id || id==='—'){ alert('会員を選択してください'); return; }
+    if(!id || id==="—"){ alert("会員を選択してください"); return; }
+
     const delta = Number(b.dataset.d);
+
     try{
-      const r = await api('adjust_stamps', { member_id:id, delta, reason:(delta>0?'quick_add':'quick_sub'), staff_id:STAFF });
-      if(!r || !r.ok){ $('#opMsg').textContent='失敗しました'; return; }
+      const r = await api("adjust_stamps", {
+        member_id:id,
+        delta,
+        reason:(delta>0?'quick_add':'quick_sub'),
+        staff_id:STAFF
+      });
+      console.log("adjust_stamps:", r);
+
+      if(!r.ok){ $('#opMsg').textContent="失敗しました"; return; }
+
       $('#m_st').textContent = r.after;
-      $('#opMsg').textContent = (delta>=0?'+':'') + delta + ' 反映しました';
-    }catch(e){ $('#opMsg').textContent='通信エラー'; }
+      $('#opMsg').textContent = `${delta>=0?'+':''}${delta} 反映しました`;
+
+    }catch(e){
+      console.error(e);
+      $('#opMsg').textContent="通信エラー";
+    }
   };
 });
 
-/* ======= プリセット ======= */
+/* ============================================================
+   8. プリセット読込
+   ============================================================ */
 async function loadPresets(){
-  const host = $('#presets'); host.innerHTML = '読込中…';
+  const host = $('#presets');
+  host.innerHTML = "読込中…";
+
   try{
-    const ps = await api('get_presets');
-    host.innerHTML = '';
+    const r = await api("get_presets",{});
+    const ps = Array.isArray(r) ? r : (r.presets || []);
+    console.log("get_presets:", ps);
+
+    host.innerHTML = "";
+    if(!ps.length){
+      host.innerHTML = '<span class="muted">プリセットがありません</span>';
+      return;
+    }
+
     ps.forEach(p=>{
-      const el = document.createElement('button');
-      el.className='btn ghost';
+      const el=document.createElement("button");
+      el.className="btn ghost";
       el.textContent = `${p.item}（${p.cost}）`;
       el.onclick = async ()=>{
         const id = $('#m_id').textContent.trim();
-        if(!id || id==='—'){ alert('会員を選択してください'); return; }
-        const r = await api('redeem_by_preset', { member_id:id, item:p.item, staff_id:STAFF });
-        if(!r || !r.ok){ alert('引換不可'); return; }
-        $('#m_st').textContent = r.after;
+        if(!id || id==="—"){ alert("会員を選択してください"); return; }
+
+        const r2 = await api("redeem_by_preset", { member_id:id, item:p.item, staff_id:STAFF });
+        console.log("redeem_by_preset:", r2);
+
+        if(!r2.ok){ alert(r2.error||"引換不可"); return; }
+
+        $('#m_st').textContent = r2.after;
         $('#opMsg').textContent = `「${p.item}」を引換しました`;
       };
       host.appendChild(el);
     });
-  }catch(e){ host.innerHTML='<span class="muted">通信エラー</span>'; }
+
+  }catch(e){
+    console.error(e);
+    host.innerHTML = '<span class="muted">通信エラー</span>';
+  }
 }
 
-/* ======= カメラ・QR ======= */
+/* ============================================================
+   9. カメラ・QR（オリジナルのまま）
+   ============================================================ */
 const video = $('#video'), canvas = $('#canvas'), ctx = canvas.getContext('2d');
 let stream=null, raf=null;
 
@@ -229,7 +322,7 @@ $('#btnCamStart').onclick = async ()=>{
   if(!STAFF){ alert('先にログインしてください'); return; }
   await startCam();
 };
-$('#btnCamStop').onclick  = stopCam;
+$('#btnCamStop').onclick = stopCam;
 
 async function startCam(){
   stopCam();
@@ -238,39 +331,56 @@ async function startCam(){
     video.srcObject = stream; await video.play(); loop();
   }catch(e){ alert('カメラを開始できません'); }
 }
+
 function stopCam(){
   if(raf) cancelAnimationFrame(raf), raf=null;
   if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
   if(video) video.pause();
 }
+
 function loop(){
   if(!video.videoWidth){ raf = requestAnimationFrame(loop); return; }
   const w=video.videoWidth,h=video.videoHeight;
-  canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h);
+  canvas.width=w; canvas.height=h;
+  ctx.drawImage(video,0,0,w,h);
   const img = ctx.getImageData(0,0,w,h);
-  const code = jsQR(img.data,w,h,{inversionAttempts:'dontInvert'});
-  if(code && code.data){ onQR(code.data); stopCam(); return; }
+  const code = jsQR(img.data,w,h,{ inversionAttempts:"dontInvert" });
+  if(code && code.data){
+    onQR(code.data);
+    stopCam();
+    return;
+  }
   raf = requestAnimationFrame(loop);
 }
+
 function parseMemberId(text){
-  try{ const u=new URL(text); const id=u.searchParams.get('id'); if(id) return id; }catch(_){}
+  try{
+    const u = new URL(text);
+    const id=u.searchParams.get("id");
+    if(id) return id;
+  }catch(_){}
   if(/^m\d{10,}$/.test(text)) return text;
-  return '';
+  return "";
 }
+
 async function onQR(data){
-  const id = parseMemberId(data);
-  if(!id){ alert('会員IDを抽出できません'); return; }
+  const id=parseMemberId(data);
+  if(!id){ alert("会員IDを抽出できません"); return; }
   await setMember(id);
 }
-document.getElementById('filePick').addEventListener('change', e=>{
-  const f = e.target.files && e.target.files[0]; if(!f) return;
-  const img = new Image();
-  img.onload = function(){
-    canvas.width=img.width; canvas.height=img.height; ctx.drawImage(img,0,0);
-    const d=ctx.getImageData(0,0,canvas.width,canvas.height); const code=jsQR(d.data,canvas.width,canvas.height);
-    if(code && code.data) onQR(code.data); else alert('QRを認識できませんでした');
+
+document.getElementById("filePick").addEventListener("change", e=>{
+  const f=e.target.files && e.target.files[0]; if(!f) return;
+  const img=new Image();
+  img.onload=function(){
+    canvas.width=img.width; canvas.height=img.height;
+    ctx.drawImage(img,0,0);
+    const d=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code=jsQR(d.data,canvas.width,canvas.height);
+    if(code && code.data) onQR(code.data);
+    else alert("QRを認識できませんでした");
   };
-  img.src = URL.createObjectURL(f);
+  img.src=URL.createObjectURL(f);
 });
 </script>
 </body>

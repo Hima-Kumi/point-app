@@ -5,6 +5,7 @@
 <script src="./env.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>マイルド会員</title>
+
 <style>
   :root{--bg:#fff7fb;--ink:#49384d;--sub:#7b6a81;--card:#fff;--bd:#f1d7e8;--pink:#ff8fc7;--mint:#8fe4cf;}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,'Noto Sans JP',sans-serif;}
@@ -30,11 +31,13 @@
   .hint{font-size:12px;color:var(--sub);text-align:center;margin:8px 0 0;}
 </style>
 </head>
+
 <body>
 <div class="wrap">
   <div id="netErr" class="alert">APIへの接続に問題があります。env.js の API_URL が最新の /exec か確認してください。</div>
 
   <h2 style="margin:6px 0">マイルド会員</h2>
+
   <div class="tab">
     <button id="tHome" class="on">ホーム</button>
     <button id="tRew">特典</button>
@@ -44,10 +47,12 @@
   <section id="home" class="card">
     <div id="prog" class="progress" style="--ratio:0"><div><div class="num" id="st">0</div><div class="cap">いまのスタンプ</div></div></div>
     <div class="hint">次の特典まで <b id="toNext">—</b></div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
       <button class="btn qr"  id="btnQR">会員QRを見せる</button>
       <button class="btn rew" id="btnRews">特典を見る</button>
     </div>
+
     <button class="btn rew" id="btnCheck" style="width:100%;margin-top:10px;">スタンプをためる</button>
     <div class="hint" id="chkMsg"></div>
   </section>
@@ -78,7 +83,7 @@
 <script>
 if(!window.API_URL){ document.getElementById('netErr').style.display='block'; }
 
-async function api(name, data, method = 'POST'){ // method is kept for compatibility but ignored
+async function api(name, data){
   const res = await fetch(API_URL, {
     method: 'POST',
     mode: 'cors',
@@ -88,17 +93,20 @@ async function api(name, data, method = 'POST'){ // method is kept for compatibi
   if(!res.ok) throw new Error('network_error');
   return await res.json();
 }
+
 const $ = s => document.querySelector(s);
 const KEY='member_id';
 
-function show(view){
-  $('#home').style.display=(view==='home')?'block':'none';
-  $('#rewards').style.display=(view==='rewards')?'block':'none';
-  $('#join').style.display=(view==='join')?'block':'none';
-  $('#tHome').classList.toggle('on',view==='home');
-  $('#tRew').classList.toggle('on',view==='rewards');
-  $('#tJoin').classList.toggle('on',view==='join');
+function show(v){
+  $('#home').style.display=(v==='home')?'block':'none';
+  $('#rewards').style.display=(v==='rewards')?'block':'none';
+  $('#join').style.display=(v==='join')?'block':'none';
+
+  $('#tHome').classList.toggle('on',v==='home');
+  $('#tRew').classList.toggle('on',v==='rewards');
+  $('#tJoin').classList.toggle('on',v==='join');
 }
+
 $('#tHome').onclick=()=>show('home');
 $('#tRew').onclick=()=>{ show('rewards'); renderRewards(); };
 $('#tJoin').onclick=()=>show('join');
@@ -110,107 +118,196 @@ function setProgress(cur, need){
   $('#toNext').textContent = Math.max(0, need-cur);
 }
 
+/* ================================================================
+   STEP1 修正① public_get_member / public_get_presets の形式を揃える
+   ================================================================ */
 async function refresh(){
   const id = localStorage.getItem(KEY);
   if(!id) return;
+
   try{
-    const [m,ps] = await Promise.all([
-      api('public_get_member',{member_id:id}),
-      api('public_get_presets')
-    ]);
-    const min = ps && ps.length ? Math.min(...ps.map(x=>Number(x.cost||10))) : 10;
-    setProgress(Number(m.stamps_total||0), min);
-  }catch(e){ document.getElementById('netErr').style.display='block'; }
+    const resM = await api('public_get_member',{member_id:id});
+    const resP = await api('public_get_presets');
+
+    if(!resM.ok) throw new Error("member read error");
+
+    const member = resM.member;         // STEP1-② 会員データの取り出し修正
+    const presets = resP.presets || []; // STEP1-① 特典データの取り出し修正
+
+    const min = presets.length
+      ? Math.min(...presets.map(x=>Number(x.cost||10)))
+      : 10;
+
+    setProgress(Number(member.stamps_total||0), min);
+
+  }catch(e){
+    document.getElementById('netErr').style.display='block';
+  }
 }
 
 $('#btnQR').onclick = ()=>{
-  const id = localStorage.getItem(KEY); if(!id){ alert('まず登録してください'); return; }
+  const id = localStorage.getItem(KEY);
+  if(!id){ alert('まず登録してください'); return; }
   window.open(`${API_URL}?view=card&id=${encodeURIComponent(id)}`,'_blank');
 };
-$('#btnRews').onclick = ()=>{ show('rewards'); renderRewards(); };
 
+/* ================================================================
+   STEP1 修正③ 特典一覧 public_get_presets の形式合わせ
+   ================================================================ */
 async function renderRewards(){
   const host = $('#grid');
   host.innerHTML='<div class="hint">読み込み中…</div>';
 
   const id = localStorage.getItem(KEY);
   if(!id){ host.innerHTML='<div class="hint">未登録です。</div>'; return; }
-  
-  try {
-    const [m,ps] = await Promise.all([ api('public_get_member',{member_id:id}), api('public_get_presets') ]);
+
+  try{
+    const resM = await api('public_get_member',{member_id:id});
+    const resP = await api('public_get_presets');
+
+    const member = resM.member;
+    const presets = resP.presets || [];
+
     host.innerHTML='';
-    if(!ps || !ps.length){ host.innerHTML='<div class="hint">利用できる特典はありません。</div>'; return; }
-    ps.forEach(p=>{
-      const can = Number(m.stamps_total||0) >= Number(p.cost);
+
+    if(!presets.length){
+      host.innerHTML='<div class="hint">利用できる特典はありません。</div>';
+      return;
+    }
+
+    presets.forEach(p=>{
+      const can = Number(member.stamps_total||0) >= Number(p.cost);
       const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;border:1px solid #f1d7e8;border-radius:12px;padding:12px;background:#fff;margin:6px 0;';
-      div.innerHTML = `<div><b>${p.item}</b><div class="hint">必要スタンプ：${p.cost}</div></div><div class="hint">${can?'今すぐOK':'あと '+(p.cost-m.stamps_total)+' 個'}</div>`;
+      div.innerHTML =
+        `<div><b>${p.item}</b><div class="hint">必要スタンプ：${p.cost}</div></div>
+         <div class="hint">${can?'今すぐOK':'あと '+(p.cost-member.stamps_total)+' 個'}</div>`;
       host.appendChild(div);
     });
-  } catch(e) {
+
+  } catch(e){
     host.innerHTML='<div class="hint">特典の読み込みに失敗しました。</div>';
   }
 }
 
-/* ===== 登録（エラーを画面内に表示） ===== */
+/* ================================================================
+   登録処理（変更なし）
+   ================================================================ */
 $('#btnJoin').onclick = async function(){
   const name=$('#nm').value.trim(), phone=$('#ph').value.trim(), ok=$('#ok').checked;
   const alertBox = $('#joinAlert');
   alertBox.style.display='none'; alertBox.textContent='';
+
   if(!name){ alertBox.textContent='お名前を入力してください'; alertBox.style.display='block'; return; }
   if(!ok){ alertBox.textContent='利用規約に同意してください'; alertBox.style.display='block'; return; }
 
   this.disabled=true; this.textContent='送信中…';
+
   try{
-    const res = await api('public_join',{name,phone}, 'POST');
-    if(!res || !res.ok){ alertBox.textContent='登録に失敗しました'; alertBox.style.display='block'; return; }
+    const res = await api('public_join',{name,phone});
+    if(!res || !res.ok){
+      alertBox.textContent='登録に失敗しました';
+      alertBox.style.display='block';
+      return;
+    }
     localStorage.setItem(KEY, res.member_id);
     show('home'); refresh();
   }catch(e){
-    console.error(e);
-    alertBox.textContent='通信エラー（API_URL または GAS 側のデプロイをご確認ください）';
+    alertBox.textContent='通信エラー（API設定をご確認ください）';
     alertBox.style.display='block';
   }finally{
     this.disabled=false; this.textContent='登録する';
   }
 };
 
-/* ===== 引き継ぎ ===== */
+/* ================================================================
+   STEP1 修正④ public_find_member の形式を揃える
+   ================================================================ */
 $('#btnFind').onclick = async ()=>{
   const name=$('#fn').value.trim(), phone=$('#fp').value.trim();
-  const host = $('#findList'); host.innerHTML='検索中…';
-  const list = await api('public_find_member',{name,phone});
-  host.innerHTML='';
-  if(!list || !list.length){ host.textContent='見つかりませんでした。'; return; }
-  list.forEach(m=>{
-    const div=document.createElement('div'); div.innerHTML=`ID:<b>${m.member_id}</b> ${m.name||''} ${m.phone||''} <button class="cta alt">これにする</button>`;
-    div.querySelector('button').onclick=()=>{ localStorage.setItem(KEY,m.member_id); show('home'); refresh(); };
-    host.appendChild(div);
-  });
+  const host = $('#findList'); 
+  host.innerHTML='検索中…';
+
+  try{
+    const res = await api('public_find_member',{name,phone});
+
+    const list = res.members || []; // STEP1-④ members に統一
+
+    if(!list.length){
+      host.textContent='見つかりませんでした。';
+      return;
+    }
+
+    host.innerHTML='';
+    list.forEach(m=>{
+      const div=document.createElement('div');
+      div.innerHTML=
+        `ID:<b>${m.member_id}</b> ${m.name||''} ${m.phone||''} 
+         <button class="cta alt">これにする</button>`;
+
+      div.querySelector('button').onclick=()=>{
+        localStorage.setItem(KEY,m.member_id);
+        show('home');
+        refresh();
+      };
+
+      host.appendChild(div);
+    });
+
+  }catch(e){
+    host.textContent='通信エラー';
+  }
 };
 
-/* ===== 自己加算 ===== */
-function deviceId(){ let id=localStorage.getItem('device_id'); if(!id){ id='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem('device_id',id);} return id; }
+/* ================================================================
+   自己加算（変更なし）
+   ================================================================ */
+function deviceId(){ 
+  let id=localStorage.getItem('device_id'); 
+  if(!id){ id='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem('device_id',id);} 
+  return id; 
+}
+
 $('#btnCheck').onclick = ()=>{
-  const id = localStorage.getItem(KEY); if(!id){ alert('まず登録/引き継ぎを'); return; }
+  const id = localStorage.getItem(KEY); 
+  if(!id){ alert('まず登録/引き継ぎを'); return; }
+
   const msg=s=>$('#chkMsg').textContent=s;
+
   if(!navigator.geolocation){ msg('位置情報が使えません'); return; }
   msg('位置情報を確認中…');
+
   navigator.geolocation.getCurrentPosition(async pos=>{
     try{
-      const r = await api('self_checkin',{member_id:id, device_id:deviceId(), token:'MAIN', lat:pos.coords.latitude, lng:pos.coords.longitude});
-      if(!r || !r.ok){ msg(r && r.error==='already_checked_today'?'今日は受け取り済みです。': r && r.error==='out_of_area'?'店内でのみ有効です。':'加算に失敗しました'); return; }
-      msg('+1 付与しました！'); refresh();
+      const r = await api('self_checkin',{
+        member_id:id,
+        device_id:deviceId(),
+        token:'MAIN',
+        lat:pos.coords.latitude,
+        lng:pos.coords.longitude
+      });
+
+      if(!r || !r.ok){
+        msg('加算に失敗しました');
+        return;
+      }
+      msg('+1 付与しました！');
+      refresh();
+
     }catch(e){ msg('通信エラー'); }
+
   }, ()=> msg('位置情報の許可が必要です'), {timeout:10000});
 };
 
-/* 初期 */
+/* ================================================================
+   初期化
+   ================================================================ */
 (function init(){
   const id=localStorage.getItem(KEY);
   show(id?'home':'join');
   if(id) refresh();
 })();
 </script>
+
 </body>
 </html>

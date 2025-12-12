@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8"/>
-<script src="./env.js?v=20241212"></script>
+<script src="./env.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>マイルド会員</title>
 
@@ -81,20 +81,13 @@
 </div>
 
 <script>
-// ---- 修正③: API_URL 未ロード判定を少し遅らせて Chrome のタイミングに対応 ----
-setTimeout(()=>{
-  if(!window.API_URL){
-    document.getElementById('netErr').style.display='block';
-  }
-},800);
+if(!window.API_URL){ document.getElementById('netErr').style.display='block'; }
 
-
-// ---- 修正①: Content-Type を application/json に変更（Chrome 対応）----
 async function api(name, data){
   const res = await fetch(API_URL, {
     method: 'POST',
     mode: 'cors',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: name, data: data }),
   });
   if(!res.ok) throw new Error('network_error');
@@ -125,7 +118,9 @@ function setProgress(cur, need){
   $('#toNext').textContent = Math.max(0, need-cur);
 }
 
-/* ================================================================ */
+/* ================================================================
+   STEP1 修正① public_get_member / public_get_presets の形式を揃える
+   ================================================================ */
 async function refresh(){
   const id = localStorage.getItem(KEY);
   if(!id) return;
@@ -136,8 +131,8 @@ async function refresh(){
 
     if(!resM.ok) throw new Error("member read error");
 
-    const member = resM.member;
-    const presets = resP.presets || [];
+    const member = resM.member;         // STEP1-② 会員データの取り出し修正
+    const presets = resP.presets || []; // STEP1-① 特典データの取り出し修正
 
     const min = presets.length
       ? Math.min(...presets.map(x=>Number(x.cost||10)))
@@ -156,6 +151,9 @@ $('#btnQR').onclick = ()=>{
   window.open(`${API_URL}?view=card&id=${encodeURIComponent(id)}`,'_blank');
 };
 
+/* ================================================================
+   STEP1 修正③ 特典一覧 public_get_presets の形式合わせ
+   ================================================================ */
 async function renderRewards(){
   const host = $('#grid');
   host.innerHTML='<div class="hint">読み込み中…</div>';
@@ -192,14 +190,16 @@ async function renderRewards(){
   }
 }
 
-/* ================================================================ */
+/* ================================================================
+   登録処理（変更なし）
+   ================================================================ */
 $('#btnJoin').onclick = async function(){
   const name=$('#nm').value.trim(), phone=$('#ph').value.trim(), ok=$('#ok').checked;
   const alertBox = $('#joinAlert');
   alertBox.style.display='none'; alertBox.textContent='';
 
   if(!name){ alertBox.textContent='お名前を入力してください'; alertBox.style.display='block'; return; }
-  if(!ok){ alertBox.textContent='利用規約に同意してください'; alertBox.textContent=''; return; }
+  if(!ok){ alertBox.textContent='利用規約に同意してください'; alertBox.style.display='block'; return; }
 
   this.disabled=true; this.textContent='送信中…';
 
@@ -220,7 +220,9 @@ $('#btnJoin').onclick = async function(){
   }
 };
 
-/* ================================================================ */
+/* ================================================================
+   STEP1 修正④ public_find_member の形式を揃える
+   ================================================================ */
 $('#btnFind').onclick = async ()=>{
   const name=$('#fn').value.trim(), phone=$('#fp').value.trim();
   const host = $('#findList'); 
@@ -229,7 +231,7 @@ $('#btnFind').onclick = async ()=>{
   try{
     const res = await api('public_find_member',{name,phone});
 
-    const list = res.members || [];
+    const list = res.members || []; // STEP1-④ members に統一
 
     if(!list.length){
       host.textContent='見つかりませんでした。';
@@ -257,7 +259,9 @@ $('#btnFind').onclick = async ()=>{
   }
 };
 
-/* ================================================================ */
+/* ================================================================
+   自己加算（変更なし）
+   ================================================================ */
 function deviceId(){ 
   let id=localStorage.getItem('device_id'); 
   if(!id){ id='d'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem('device_id',id);} 
@@ -295,12 +299,15 @@ $('#btnCheck').onclick = ()=>{
   }, ()=> msg('位置情報の許可が必要です'), {timeout:10000});
 };
 
-/* ================================================================ */
+/* ================================================================
+   初期化
+   ================================================================ */
 (function init(){
   const id=localStorage.getItem(KEY);
   show(id?'home':'join');
   if(id) refresh();
 })();
 </script>
+
 </body>
 </html>

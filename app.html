@@ -96,16 +96,24 @@
 </div>
 
 <script>
+
 async function api(name, data){
-  const res = await fetch(API_URL, {
+  await fetch(API_URL, {
     method: 'POST',
-    // headers: { 'Content-Type': 'application/json' },
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: name, data })
   });
-  if(!res.ok) throw new Error('network_error');
-  return await res.json();
+  return {}; // 一時：レスポンスは見ない
 }
+
+// async function api(name, data){
+//   const res = await fetch(API_URL, {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify({ action: name, data })
+//   });
+//   if(!res.ok) throw new Error('network_error');
+//   return await res.json();
+// }
 
 const $ = s => document.querySelector(s);
 const KEY='member_id';

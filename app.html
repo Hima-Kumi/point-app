@@ -1,37 +1,116 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <title>POST 検証</title>
-  <script src="./env.js"></script>
-</head>
-<body>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>マイルド会員</title>
 
-<h2>GAS POST 検証</h2>
-<button id="btn">POST送信</button>
-<pre id="log"></pre>
+<script src="./env.js"></script>
+
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff7fb;margin:0}
+.wrap{max-width:520px;margin:auto;padding:14px}
+.card{background:#fff;border-radius:14px;padding:16px;margin:10px 0;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+h2{margin:0 0 8px}
+input,button{width:100%;padding:12px;font-size:16px;border-radius:10px;border:1px solid #ddd}
+button{background:#ff8fc7;color:#fff;border:none;font-weight:700}
+button.sub{background:#8fe4cf;color:#204c46}
+.alert{display:none;background:#ffe0e7;color:#7a2d3a;padding:10px;border-radius:10px;margin-bottom:8px}
+.hint{font-size:13px;color:#666;margin-top:6px}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<div id="err" class="alert"></div>
+
+<div class="card">
+  <h2>新規登録</h2>
+  <input id="nm" placeholder="お名前（必須）">
+  <input id="ph" placeholder="電話番号（任意）">
+  <button id="btnJoin">登録する</button>
+</div>
+
+<div class="card">
+  <h2>会員情報</h2>
+  <button class="sub" id="btnMe">取得する</button>
+  <pre id="me"></pre>
+</div>
+
+<div class="card">
+  <h2>特典一覧</h2>
+  <button class="sub" id="btnPresets">取得する</button>
+  <pre id="presets"></pre>
+</div>
+
+<div class="card">
+  <h2>ID引き継ぎ</h2>
+  <input id="fn" placeholder="名前">
+  <input id="fp" placeholder="電話番号">
+  <button class="sub" id="btnFind">検索</button>
+  <pre id="find"></pre>
+</div>
+
+</div>
 
 <script>
-const log = msg => {
-  document.getElementById('log').textContent += msg + "\n";
+const KEY = "member_id";
+const err = msg => {
+  const e = document.getElementById('err');
+  e.style.display = 'block';
+  e.textContent = msg;
 };
 
-document.getElementById('btn').onclick = async () => {
-  try {
+async function api(action, data){
+  try{
     const res = await fetch(API_URL, {
       method: 'POST',
-      body: JSON.stringify({ test: 'hello' })
+      body: JSON.stringify({ action, data })
     });
-
-    log("fetch 成功");
-    log("status: " + res.status);
-
-    const text = await res.text();
-    log("response: " + text);
-
-  } catch (e) {
-    log("fetch 失敗: " + e);
+    const txt = await res.text();
+    return JSON.parse(txt);
+  }catch(e){
+    err("API通信に失敗しました: " + e);
+    throw e;
   }
+}
+
+// 新規登録
+document.getElementById('btnJoin').onclick = async ()=>{
+  err("");
+  const name = nm.value.trim();
+  if(!name) return err("名前を入力してください");
+  const r = await api("public_join",{ name, phone: ph.value });
+  if(r.ok){
+    localStorage.setItem(KEY, r.member_id);
+    alert("登録完了");
+  }else{
+    err(r.error || "登録失敗");
+  }
+};
+
+// 会員取得
+document.getElementById('btnMe').onclick = async ()=>{
+  err("");
+  const id = localStorage.getItem(KEY);
+  if(!id) return err("未登録です");
+  const r = await api("public_get_member",{ member_id:id });
+  document.getElementById('me').textContent = JSON.stringify(r,null,2);
+};
+
+// 特典
+document.getElementById('btnPresets').onclick = async ()=>{
+  err("");
+  const r = await api("public_get_presets",{});
+  document.getElementById('presets').textContent = JSON.stringify(r,null,2);
+};
+
+// 検索
+document.getElementById('btnFind').onclick = async ()=>{
+  err("");
+  const r = await api("public_find_member",{ name:fn.value, phone:fp.value });
+  document.getElementById('find').textContent = JSON.stringify(r,null,2);
 };
 </script>
 

@@ -1,205 +1,39 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta charset="utf-8"/>
-<script src="./env.js"></script>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>マイルド会員</title>
-
-<style>
-  :root{--bg:#fff7fb;--ink:#49384d;--sub:#7b6a81;--card:#fff;--bd:#f1d7e8;--pink:#ff8fc7;--mint:#8fe4cf;}
-  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,'Noto Sans JP',sans-serif;}
-  .wrap{max-width:520px;margin:0 auto;padding:14px;}
-  .alert{margin:8px 0;padding:8px 12px;border:1px solid #ffdce2;background:#fff0f4;border-radius:10px;color:#7a2d3a;font-size:12px;display:none}
-  .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px;box-shadow:0 10px 24px rgba(255,143,199,.08);}
-  .tab{display:flex;gap:6px;margin:8px 0 12px}
-  .tab button{flex:1;border:1px solid var(--bd);background:#fff;padding:10px;border-radius:10px;font-weight:700}
-  .tab .on{background:linear-gradient(135deg,#fff,#ffe6f2)}
-  .progress{width:220px;height:220px;margin:6px auto;border-radius:50%;display:grid;place-items:center;background:
-    conic-gradient(var(--pink) calc(var(--ratio)*1%), #ffe6f2 0),
-    radial-gradient(closest-side,#fff 78%,transparent 79% 100%),
-    radial-gradient(closest-side,#ffd8ec 82%,transparent 83% 100%);}
-  .num{font-size:44px;font-weight:800;text-align:center}
-  .cap{font-size:12px;color:var(--sub);text-align:center}
-  .btn{padding:12px 14px;border:none;border-radius:14px;color:#fff;font-weight:700;cursor:pointer}
-  .qr{background:linear-gradient(135deg,var(--pink),#ffb3d9);}
-  .rew{background:linear-gradient(135deg,var(--mint),#b6f1e3); color:#205850;}
-  .stack{display:flex;flex-direction:column;gap:10px;}
-  input[type=text], input[type=tel]{width:100%;padding:12px;border:1px solid var(--bd);border-radius:12px;background:#fff;font-size:16px;}
-  .cta{padding:12px 14px;border:none;border-radius:14px;color:#fff;background:linear-gradient(135deg,var(--pink),#ffb3d9);font-weight:700;cursor:pointer;}
-  .cta.alt{background:linear-gradient(135deg,var(--mint),#b6f1e3); color:#204c46;}
-  .hint{font-size:12px;color:var(--sub);text-align:center;margin:8px 0 0;}
-</style>
+  <meta charset="utf-8">
+  <title>POST 検証</title>
+  <script src="./env.js"></script>
 </head>
-
 <body>
-<div class="wrap">
-  <div id="netErr" class="alert">
-    APIへの接続に問題があります。しばらくしてから再度お試しください。
-  </div>
 
-  <h2 style="margin:6px 0">マイルド会員</h2>
-
-  <div class="tab">
-    <button id="tHome" class="on">ホーム</button>
-    <button id="tRew">特典</button>
-    <button id="tJoin">登録/引き継ぎ</button>
-  </div>
-
-  <section id="home" class="card">
-    <div id="prog" class="progress" style="--ratio:0">
-      <div>
-        <div class="num" id="st">0</div>
-        <div class="cap">いまのスタンプ</div>
-      </div>
-    </div>
-    <div class="hint">次の特典まで <b id="toNext">—</b></div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
-      <button class="btn qr"  id="btnQR">会員QRを見せる</button>
-      <button class="btn rew" id="btnRews">特典を見る</button>
-    </div>
-
-    <button class="btn rew" id="btnCheck" style="width:100%;margin-top:10px;">
-      スタンプをためる
-    </button>
-    <div class="hint" id="chkMsg"></div>
-  </section>
-
-  <section id="rewards" class="card" style="display:none">
-    <div id="grid"></div>
-  </section>
-
-  <section id="join" class="card" style="display:none">
-    <div id="joinAlert" class="alert"></div>
-    <div class="stack">
-      <input id="nm" type="text" placeholder="お名前（必須）">
-      <input id="ph" type="tel" placeholder="電話番号（任意）" inputmode="numeric">
-      <label><input id="ok" type="checkbox"> 利用規約に同意します</label>
-      <button id="btnJoin" class="cta">登録する</button>
-
-      <details style="margin-top:6px;">
-        <summary>ID引き継ぎ（機種変更など）</summary>
-        <input id="fn" type="text" placeholder="お名前（部分一致OK）" style="margin-top:6px;">
-        <input id="fp" type="tel" placeholder="電話番号（下4桁など）" style="margin-top:6px;">
-        <button id="btnFind" class="cta alt" style="margin-top:6px;">
-          検索してひも付け
-        </button>
-        <div id="findList" class="hint" style="margin-top:6px;"></div>
-      </details>
-    </div>
-  </section>
-
-  <div class="hint" style="text-align:center;margin-top:12px;">
-    ホーム画面に追加の手順
-  </div>
-</div>
+<h2>GAS POST 検証</h2>
+<button id="btn">POST送信</button>
+<pre id="log"></pre>
 
 <script>
-
-async function api(name, data){
-  try{
-    const r = await fetch(API_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action: name, data }),
-      // 念のため（診断用）
-      cache: 'no-store',
-      redirect: 'follow'
-    });
-    // ここまで来たら「到達」はしている（CORSでも到達はする）
-    return { __diag: { ok: true, status: r.status, type: r.type } };
-  }catch(e){
-    // 失敗理由を画面に出す
-    const box = document.getElementById('netErr');
-    box.style.display = 'block';
-    box.textContent =
-      'APIへの接続に問題があります：' +
-      (e && (e.name + ': ' + e.message) ? (e.name + ': ' + e.message) : String(e)) +
-      ' / API_URL=' + String(window.API_URL);
-    throw e;
-  }
-}
-
-
-// async function api(name, data){
-//   const res = await fetch(API_URL, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
-//     body: JSON.stringify({ action: name, data })
-//   });
-//   if(!res.ok) throw new Error('network_error');
-//   return await res.json();
-// }
-
-const $ = s => document.querySelector(s);
-const KEY='member_id';
-
-function show(v){
-  $('#home').style.display=(v==='home')?'block':'none';
-  $('#rewards').style.display=(v==='rewards')?'block':'none';
-  $('#join').style.display=(v==='join')?'block':'none';
-  $('#tHome').classList.toggle('on',v==='home');
-  $('#tRew').classList.toggle('on',v==='rewards');
-  $('#tJoin').classList.toggle('on',v==='join');
-}
-
-$('#tHome').onclick=()=>show('home');
-$('#tRew').onclick=()=>{ show('rewards'); renderRewards(); };
-$('#tJoin').onclick=()=>show('join');
-
-function setProgress(cur, need){
-  const ratio = Math.min(100, Math.round(cur/need*100));
-  $('#prog').style.setProperty('--ratio',ratio);
-  $('#st').textContent=cur;
-  $('#toNext').textContent = Math.max(0, need-cur);
-}
-
-async function refresh(){
-  const id = localStorage.getItem(KEY);
-  if(!id) return;
-  try{
-    const m = await api('public_get_member',{member_id:id});
-    const p = await api('public_get_presets');
-    const presets = p.presets || [];
-    const min = presets.length ? Math.min(...presets.map(x=>Number(x.cost||10))) : 10;
-    setProgress(Number(m.member.stamps_total||0), min);
-  }catch(e){
-    $('#netErr').style.display='block';
-  }
-}
-
-$('#btnQR').onclick=()=>{
-  const id=localStorage.getItem(KEY);
-  if(!id){ alert('まず登録してください'); return; }
-  window.open(`${API_URL}?view=card&id=${encodeURIComponent(id)}`,'_blank');
+const log = msg => {
+  document.getElementById('log').textContent += msg + "\n";
 };
 
-async function renderRewards(){
-  const host=$('#grid');
-  host.innerHTML='読み込み中…';
-  const id=localStorage.getItem(KEY);
-  if(!id){ host.textContent='未登録です'; return; }
-  try{
-    const m=await api('public_get_member',{member_id:id});
-    const p=await api('public_get_presets');
-    host.innerHTML='';
-    (p.presets||[]).forEach(x=>{
-      const can=Number(m.member.stamps_total)>=Number(x.cost);
-      const d=document.createElement('div');
-      d.style.cssText='border:1px solid #f1d7e8;border-radius:12px;padding:12px;margin:6px 0;background:#fff';
-      d.innerHTML=`<b>${x.item}</b><div class="hint">必要:${x.cost} / ${can?'OK':'不足'}</div>`;
-      host.appendChild(d);
+document.getElementById('btn').onclick = async () => {
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ test: 'hello' })
     });
-  }catch(e){
-    host.textContent='読み込みに失敗しました';
-  }
-}
 
-(function init(){
-  const id=localStorage.getItem(KEY);
-  show(id?'home':'join');
-  if(id) refresh();
-})();
+    log("fetch 成功");
+    log("status: " + res.status);
+
+    const text = await res.text();
+    log("response: " + text);
+
+  } catch (e) {
+    log("fetch 失敗: " + e);
+  }
+};
 </script>
+
 </body>
 </html>
